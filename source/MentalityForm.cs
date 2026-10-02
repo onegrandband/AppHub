@@ -21,11 +21,13 @@ namespace AppHub
             InitializeVersions();
             InitializeVersionTable();
             ApplyTheme();
-            ApplyPlatformFilter("auto-default");
+            ApplyPlatformFilter("Auto"); // Replaced "auto-default"
         }
 
         private void InitializeForm()
         {
+            SuspendLayout(); // Prevents UI flicker while adding controls
+
             Text = "Mentality";
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(900, 500);
@@ -63,17 +65,19 @@ namespace AppHub
                 Location = new Point(145, 99),
                 Size = new Size(180, 25)
             };
+            
+            // Consolidated redundant auto-detect items
             platformSelector.Items.AddRange(new object[]
             {
-                "Auto-detect (Default)",
                 "Auto-detect",
                 "Windows",
                 "MacOS",
                 "Linux",
                 "All"
             });
-            platformSelector.SelectedIndex = 0;
+            
             platformSelector.SelectedIndexChanged += PlatformSelector_SelectedIndexChanged;
+            platformSelector.SelectedIndex = 0; 
 
             versionsGrid = new DataGridView
             {
@@ -112,33 +116,36 @@ namespace AppHub
             Controls.Add(platformSelector);
             Controls.Add(versionsGrid);
             Controls.Add(statusLabel);
+            
+            ResumeLayout(false);
         }
 
         private void InitializeVersions()
         {
+            // The constructor now takes 'LocalFileName' to avoid brittle string matching later
             versions.Add(new MentalityVersion(
-                "Mentality_1.2.1.exe", "41 KB", "1.2.1", "Windows 10/11", "Stable",
+                "Mentality_1.2.1.exe", "Mentality_1.2.1.exe", "41 KB", "1.2.1", "Windows 10/11", "Stable",
                 "Fixed bug where hotkey setting did nothing.", "TBD", "Windows", true));
             versions.Add(new MentalityVersion(
-                "Mentality.dmg", "TBD", "1.1.1", "MacOS 12+", "In Development",
+                "Mentality.dmg", "Mentality.dmg", "TBD", "1.1.1", "MacOS 12+", "In Development",
                 "Mac release is currently being worked on.", "TBD", "Mac", false));
             versions.Add(new MentalityVersion(
-                "Mentality.tar.gz", "TBD", "1.1.1", "Ubuntu 20.04+", "In Development",
+                "Mentality.tar.gz", "Mentality.tar.gz", "TBD", "1.1.1", "Ubuntu 20.04+", "In Development",
                 "Linux release is currently being worked on.", "TBD", "Linux", false));
             versions.Add(new MentalityVersion(
-                "Mentality.exe", "37 KB", "1.2.0", "Windows 10 & 11", "Stable",
+                "Mentality.exe", "Mentality_1.2.0.exe", "37 KB", "1.2.0", "Windows 10 & 11", "Stable",
                 "Profile presets, per-app rulesets, scheduled timers, interval jitter, smart pause, and coordinate locking. Additionally, it also adds plugin sandboxing, and UI accessibility enhancements :)",
                 "TBD", "Windows", true));
             versions.Add(new MentalityVersion(
-                "Mentality.exe", "27 KB", "1.1.1", "Windows 10 & 11", "Stable",
+                "Mentality.exe", "Mentality_SX_1.1.1.exe", "27 KB", "1.1.1", "Windows 10 & 11", "Stable",
                 "Misc bug fixes, clear hotkey setting, hotkey selection saving, and win-key (MOD_WIN) support",
                 "TBD", "Windows", true));
             versions.Add(new MentalityVersion(
-                "Mentality.exe", "25.5 KB", "1.1.0", "Windows 10/11", "Stable",
+                "Mentality.exe", "Mentality_1.1.0.exe", "25.5 KB", "1.1.0", "Windows 10/11", "Stable",
                 "Select multiple hotkeys (e.g Ctrl+Shift), hotkey bug fix, remove passphrase",
                 "TBD", "Windows", true));
             versions.Add(new MentalityVersion(
-                "Mentality.exe", "17.5 KB", "1.0.0", "Windows 10 & 11", "Legacy",
+                "Mentality.exe", "Mentality.exe", "17.5 KB", "1.0.0", "Windows 10 & 11", "Legacy",
                 "Initial release. Auto-clicker with many bugs, but this was/is just the start!!!!!",
                 "TBD", "Windows", true));
         }
@@ -200,20 +207,23 @@ namespace AppHub
 
         private void PlatformSelector_SelectedIndexChanged(object sender, EventArgs e)
         {
-            string[] filterValues = { "auto-default", "auto", "Windows", "Mac", "Linux", "All" };
+            string[] filterValues = { "Auto", "Windows", "Mac", "Linux", "All" };
             ApplyPlatformFilter(filterValues[platformSelector.SelectedIndex]);
         }
 
         private void ApplyPlatformFilter(string platform)
         {
-            string targetPlatform = platform;
-            if (platform == "auto-default" || platform == "auto")
-                targetPlatform = DetectPlatform();
+            string targetPlatform = (platform == "Auto") ? DetectPlatform() : platform;
+
+            // CRITICAL: Hiding a row that has the active selection crashes the DataGridView. Clear it first.
+            versionsGrid.CurrentCell = null;
 
             foreach (DataGridViewRow row in versionsGrid.Rows)
             {
-                MentalityVersion version = row.Tag as MentalityVersion;
-                row.Visible = targetPlatform == "All" || (version != null && version.Platform == targetPlatform);
+                if (row.Tag is MentalityVersion version)
+                {
+                    row.Visible = targetPlatform == "All" || version.Platform == targetPlatform;
+                }
             }
 
             statusLabel.Text = targetPlatform == "All"
@@ -250,13 +260,13 @@ namespace AppHub
         private void DownloadVersion(MentalityVersion version)
         {
             string sourceDirectory = Path.Combine(Application.StartupPath, "MentalityFiles");
-            string sourcePath = Path.Combine(sourceDirectory, GetLocalFileName(version));
+            string sourcePath = Path.Combine(sourceDirectory, version.LocalFileName);
 
             if (!File.Exists(sourcePath))
             {
                 MessageBox.Show(
                     "The local file was not found.\n\nExpected location:\n" + sourcePath +
-                    "\n\nNo website was opened. Place the executable in that folder and try again.",
+                    "\n\nNo website was opened. Place the file in that folder and try again.",
                     "Mentality file not found",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -266,8 +276,12 @@ namespace AppHub
             using (SaveFileDialog saveDialog = new SaveFileDialog())
             {
                 saveDialog.FileName = version.ExecutableName;
-                saveDialog.Filter = "Mentality files|*.exe|All files|*.*";
                 saveDialog.Title = "Save Mentality locally";
+
+                // Generate dynamic filter based on the target extension (.exe, .dmg, .tar.gz, etc)
+                string ext = Path.GetExtension(version.ExecutableName);
+                if (string.IsNullOrEmpty(ext)) ext = ".exe";
+                saveDialog.Filter = $"Mentality file (*{ext})|*{ext}|All files (*.*)|*.*";
 
                 if (saveDialog.ShowDialog(this) != DialogResult.OK)
                     return;
@@ -288,23 +302,6 @@ namespace AppHub
             }
         }
 
-        private string GetLocalFileName(MentalityVersion version)
-        {
-            switch (version.Version)
-            {
-                case "1.2.1":
-                    return "Mentality_1.2.1.exe";
-                case "1.2.0":
-                    return "Mentality_1.2.0.exe";
-                case "1.1.1":
-                    return "Mentality_SX_1.1.1.exe";
-                case "1.1.0":
-                    return "Mentality_1.1.0.exe";
-                default:
-                    return "Mentality.exe";
-            }
-        }
-
         private void ApplyTheme()
         {
             Color backgroundColor = isDarkMode ? Color.FromArgb(11, 11, 12) : Color.White;
@@ -314,6 +311,7 @@ namespace AppHub
 
             BackColor = backgroundColor;
             ForeColor = textColor;
+            
             versionsGrid.BackgroundColor = panelColor;
             versionsGrid.GridColor = isDarkMode ? Color.FromArgb(65, 65, 70) : Color.FromArgb(220, 220, 220);
             versionsGrid.DefaultCellStyle.BackColor = panelColor;
@@ -323,18 +321,21 @@ namespace AppHub
             versionsGrid.ColumnHeadersDefaultCellStyle.BackColor = isDarkMode ? Color.FromArgb(45, 45, 50) : Color.FromArgb(244, 244, 244);
             versionsGrid.ColumnHeadersDefaultCellStyle.ForeColor = textColor;
             versionsGrid.EnableHeadersVisualStyles = false;
+            
             platformSelector.BackColor = panelColor;
             platformSelector.ForeColor = textColor;
+            
             statusLabel.BackColor = isDarkMode ? Color.FromArgb(28, 28, 31) : Color.FromArgb(245, 245, 245);
             statusLabel.ForeColor = secondaryTextColor;
         }
 
         private sealed class MentalityVersion
         {
-            public MentalityVersion(string executableName, string size, string version, string compatibility,
-                string type, string description, string commit, string platform, bool downloadAvailable)
+            public MentalityVersion(string executableName, string localFileName, string size, string version, 
+                string compatibility, string type, string description, string commit, string platform, bool downloadAvailable)
             {
                 ExecutableName = executableName;
+                LocalFileName = localFileName;
                 Size = size;
                 Version = version;
                 Compatibility = compatibility;
@@ -346,6 +347,7 @@ namespace AppHub
             }
 
             public string ExecutableName { get; private set; }
+            public string LocalFileName { get; private set; } // New property maps straight to your physical files
             public string Size { get; private set; }
             public string Version { get; private set; }
             public string Compatibility { get; private set; }
