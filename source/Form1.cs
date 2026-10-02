@@ -10,6 +10,7 @@ namespace AppHub
     {
         private List<Tool> allTools = new List<Tool>();
         private bool isDarkMode = false;
+        private readonly string searchPlaceholder = "Search tools (e.g., audio, text, image, flashlight, blues)...";
 
         public Form1()
         {
@@ -22,22 +23,24 @@ namespace AppHub
             InitializeTools();
 
             // Set up placeholder text behavior
-            searchTextBox.Text = "Search tools (e.g., audio, text, image, flashlight, blues)...";
+            searchTextBox.Text = searchPlaceholder;
             searchTextBox.ForeColor = Color.FromArgb(169, 169, 169);
+            
             searchTextBox.Leave += (s, evt) => 
             {
                 if (string.IsNullOrWhiteSpace(searchTextBox.Text))
                 {
-                    searchTextBox.Text = "Search tools (e.g., audio, text, image, flashlight, blues)...";
+                    searchTextBox.Text = searchPlaceholder;
                     searchTextBox.ForeColor = Color.FromArgb(169, 169, 169);
                 }
             };
+            
             searchTextBox.Enter += (s, evt) => 
             {
-                if (searchTextBox.Text == "Search tools (e.g., audio, text, image, flashlight, blues)...")
+                if (searchTextBox.Text == searchPlaceholder)
                 {
                     searchTextBox.Text = "";
-                    searchTextBox.ForeColor = Color.Black;
+                    searchTextBox.ForeColor = isDarkMode ? Color.White : Color.Black;
                 }
             };
 
@@ -46,9 +49,8 @@ namespace AppHub
 
         private void LoadTheme()
         {
-            // Load dark mode preference from registry or settings
-            string darkModeSetting = Properties.Settings.Default.DarkMode;
-            isDarkMode = darkModeSetting == "true";
+            // Now using the boolean type we established in the Settings file
+            isDarkMode = Properties.Settings.Default.DarkMode;
             ApplyTheme();
         }
 
@@ -97,10 +99,11 @@ namespace AppHub
             string searchQuery = searchTextBox.Text.ToLower();
 
             // Ignore placeholder text
-            if (searchQuery == "search tools (e.g., audio, text, image, flashlight, blues)...")
+            if (searchQuery == searchPlaceholder.ToLower())
                 searchQuery = "";
 
-            string sortOrder = sortComboBox.SelectedIndex == 0 ? "az" : "za";
+            // Use safe fallback in case sortComboBox is not initialized yet
+            string sortOrder = (sortComboBox.SelectedIndex <= 0) ? "az" : "za";
 
             // Filter
             var filteredTools = allTools.Where(t =>
@@ -114,7 +117,11 @@ namespace AppHub
             else
                 filteredTools = filteredTools.OrderByDescending(t => t.Title).ToList();
 
-            // Clear existing cards
+            // CRITICAL FIX: Dispose old cards to prevent Memory and GDI handle leaks
+            foreach (Control control in toolsFlowLayoutPanel.Controls)
+            {
+                control.Dispose(); 
+            }
             toolsFlowLayoutPanel.Controls.Clear();
 
             // Show/hide no results
@@ -129,10 +136,13 @@ namespace AppHub
                 noResultsPanel.Visible = false;
 
                 // Add tool cards
+                toolsFlowLayoutPanel.SuspendLayout(); // Prevents UI flicker while drawing many cards
                 foreach (var tool in filteredTools)
                 {
-                    ToolCard card = new ToolCard(tool, isDarkMode);
-                    card.Margin = new Padding(6);
+                    ToolCard card = new ToolCard(tool, isDarkMode)
+                    {
+                        Margin = new Padding(6)
+                    };
                     card.ToolClicked += (s, evt) =>
                     {
                         ToolCard clickedCard = s as ToolCard;
@@ -148,7 +158,6 @@ namespace AppHub
                             }
                             else
                             {
-                                // Open other tool pages in the embedded browser form
                                 using (ToolPageForm toolPageForm = new ToolPageForm(selectedTool, clickedCard.IsDarkMode))
                                 {
                                     toolPageForm.ShowDialog(this);
@@ -158,6 +167,7 @@ namespace AppHub
                     };
                     toolsFlowLayoutPanel.Controls.Add(card);
                 }
+                toolsFlowLayoutPanel.ResumeLayout();
             }
         }
 
@@ -175,13 +185,24 @@ namespace AppHub
             logoLabel.ForeColor = textColor;
             homeBtn.ForeColor = isDarkMode ? Color.FromArgb(153, 153, 153) : Color.FromArgb(128, 128, 128);
             communityBtn.ForeColor = isDarkMode ? Color.FromArgb(153, 153, 153) : Color.FromArgb(128, 128, 128);
+            
             themeToggleBtn.ForeColor = isDarkMode ? Color.FromArgb(153, 153, 153) : Color.FromArgb(128, 128, 128);
             themeToggleBtn.Text = isDarkMode ? "☀" : "🌙";
 
             searchTextBox.BackColor = isDarkMode ? Color.FromArgb(28, 28, 31) : Color.White;
-            searchTextBox.ForeColor = isDarkMode ? Color.White : Color.Black;
+            
+            // Protect placeholder text color from turning solid black/white on theme change
+            if (searchTextBox.Text == searchPlaceholder)
+            {
+                searchTextBox.ForeColor = Color.FromArgb(169, 169, 169);
+            }
+            else
+            {
+                searchTextBox.ForeColor = textColor;
+            }
+
             sortComboBox.BackColor = isDarkMode ? Color.FromArgb(28, 28, 31) : Color.White;
-            sortComboBox.ForeColor = isDarkMode ? Color.White : Color.Black;
+            sortComboBox.ForeColor = textColor;
 
             noResultsLabel.ForeColor = isDarkMode ? Color.FromArgb(153, 153, 153) : Color.FromArgb(100, 100, 100);
             noResultsIconLabel.ForeColor = isDarkMode ? Color.FromArgb(80, 80, 80) : Color.FromArgb(200, 200, 200);
@@ -189,8 +210,8 @@ namespace AppHub
             // Refresh cards with new theme
             RefreshToolsDisplay();
 
-            // Save theme preference
-            Properties.Settings.Default.DarkMode = isDarkMode ? "true" : "false";
+            // Save theme preference directly as a boolean
+            Properties.Settings.Default.DarkMode = isDarkMode;
             Properties.Settings.Default.Save();
         }
 
@@ -203,8 +224,9 @@ namespace AppHub
         private void SearchTextBox_TextChanged(object sender, EventArgs e)
         {
             // Ignore placeholder text
-            if (searchTextBox.Text == "Search tools (e.g., audio, text, image, flashlight, blues)...")
+            if (searchTextBox.Text == searchPlaceholder)
                 return;
+            
             RefreshToolsDisplay();
         }
 
